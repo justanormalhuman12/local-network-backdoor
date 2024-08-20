@@ -8,30 +8,53 @@ HOST = socket.gethostbyname(socket.gethostname())  # Automatically get the host'
 PORT = 65432  # Port to connect to
 
 def show_popup(message):
-    # Create a simple Tkinter popup window
     root = tk.Tk()
     root.withdraw()  # Hide the root window
     messagebox.showinfo("Message from Host", message)
     root.destroy()
 
-def main():
-    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+def connect_to_server():
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         s.connect((HOST, PORT))
         print(f"Connected to {HOST}:{PORT}")
+        return s
+    except socket.error as e:
+        print(f"Connection error: {e}")
+        return None
+
+def handle_command(command, socket_connection):
+    if command.lower() == "exit":
+        socket_connection.sendall(command.encode('utf-8'))
+        return False
+    elif command.lower().startswith('chat '):
+        message = command[5:].strip()
+        show_popup(message)
+    else:
+        try:
+            socket_connection.sendall(command.encode('utf-8'))
+            data = socket_connection.recv(1024).decode('utf-8')
+            print(f"Response: {data}")
+        except socket.error as e:
+            print(f"Communication error: {e}")
+            return False
+    return True
+
+def main():
+    s = connect_to_server()
+    if s is None:
+        print("Exiting due to connection failure.")
+        return
+    
+    with s:
         while True:
-            command = input("Enter command: ")
-            if command.lower() == "exit":
-                s.sendall(command.encode('utf-8'))
+            command = input("Enter command: ").strip()
+            if not command:
+                print("Please enter a valid command.")
+                continue
+            
+            if not handle_command(command, s):
                 break
-            elif command.lower().startswith('chat '):
-                # Trigger a popup window for 'chat' command
-                message = command[5:].strip()  # Extract the message after 'chat'
-                show_popup(message)
-                continue  # No need to send the 'chat' command to the receiver
-            else:
-                s.sendall(command.encode('utf-8'))
-                data = s.recv(1024).decode('utf-8')
-                print(f"Response: {data}")
 
 if __name__ == "__main__":
     main()
